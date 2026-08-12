@@ -36,7 +36,7 @@ void* arena_alloc_aligned(Arena* a, size_t size, size_t alignment)
 
 void arena_reset(Arena* a)
 {
-    (void)a;
+    a->offset = 0;
 }
 
 void arena_destroy(Arena* a)
