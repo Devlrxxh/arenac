@@ -35,7 +35,10 @@ test: all
 	$(BUILD)/test_arena
 	$(BUILD)/test_slab
 
+bench: $(BUILD)/bench
+	$(BUILD)/bench
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test clean
+.PHONY: all test bench clean

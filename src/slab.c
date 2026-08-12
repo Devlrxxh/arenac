@@ -1,6 +1,20 @@
 #include "slab.h"
 
 #include <stdlib.h>
+#include <string.h>
+
+static void slot_set_next(unsigned char* slot, unsigned char* next)
+{
+    unsigned char* tmp = next;
+    memcpy(slot, &tmp, sizeof tmp);
+}
+
+static unsigned char* slot_get_next(unsigned char* slot)
+{
+    unsigned char* next;
+    memcpy(&next, slot, sizeof next);
+    return next;
+}
 
 Slab* slab_create(size_t object_size, size_t objects_per_block)
 {
@@ -24,10 +38,10 @@ Slab* slab_create(size_t object_size, size_t objects_per_block)
     unsigned char* slot = s->block;
     for (size_t i = 0; i < objects_per_block - 1; i++)
     {
-        *(unsigned char**)slot = slot + object_size;
+        slot_set_next(slot, slot + object_size);
         slot += object_size;
     }
-    *(unsigned char**)slot = NULL;
+    slot_set_next(slot, NULL);
     s->free_head = s->block;
 
     return s;
@@ -38,7 +52,7 @@ void* slab_alloc(Slab* s)
     if (s->free_count == 0) return NULL;
 
     unsigned char* slot = s->free_head;
-    s->free_head = *(unsigned char**)slot;
+    s->free_head = slot_get_next(slot);
     s->free_count--;
 
     return slot;
@@ -47,7 +61,7 @@ void* slab_alloc(Slab* s)
 void slab_free(Slab* s, void* ptr)
 {
     unsigned char* slot = ptr;
-    *(unsigned char**)slot = s->free_head;
+    slot_set_next(slot, s->free_head);
     s->free_head = slot;
     s->free_count++;
 }
