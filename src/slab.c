@@ -1,3 +1,4 @@
+#define ARENAC_NO_INLINE
 #include "slab.h"
 
 #include <stdint.h>
@@ -49,6 +50,7 @@ static Slab* slab_init(Slab* s, size_t object_size, size_t objects_per_block,
     s->object_size = object_size;
     s->block_size = object_size * objects_per_block;
     s->free_count = objects_per_block;
+    s->pow2 = (object_size & (object_size - 1)) == 0;
     s->alloc_fn = alloc_fn;
     s->free_fn = free_fn;
     s->ctx = ctx;
@@ -111,6 +113,8 @@ bool slab_is_from(Slab* s, void* ptr)
     uintptr_t off = p - base;
     if (off >= s->block_size) return false;
 
+    if (s->pow2)
+        return (off & (s->object_size - 1)) == 0;
     return off % s->object_size == 0;
 }
 

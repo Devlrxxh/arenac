@@ -26,7 +26,22 @@ Arena* arena_create(size_t initial_size, bool growable);
 Arena* arena_create_with_allocator(size_t initial_size, bool growable,
                                    AcAllocFn alloc_fn, AcFreeFn free_fn,
                                    void* ctx);
+void*  arena_alloc_slow(Arena* a, size_t size); // internal: grow or NULL when not growable
+
+#ifdef ARENAC_NO_INLINE
 void*  arena_alloc(Arena* a, size_t size);
+#else
+static inline void* arena_alloc(Arena* a, size_t size)
+{
+    if (size <= a->size - a->offset)
+    {
+        void* address = a->base + a->offset;
+        a->offset += size;
+        return address;
+    }
+    return arena_alloc_slow(a, size);
+}
+#endif
 void*  arena_alloc_array(Arena* a, size_t n, size_t elem_size);
 void*  arena_alloc_aligned(Arena* a, size_t size, size_t alignment);
 size_t arena_get_used_bytes(const Arena* a);

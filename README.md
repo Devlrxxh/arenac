@@ -72,8 +72,8 @@ Arena* a = arena_create_with_allocator(1 << 20, true, map, unmap, NULL);
 
 | Test | malloc | arenac | Speedup |
 |------|--------|--------|---------|
-| Batch allocs | 145.12 ms | 42.29 ms | 3.43x |
-| Alloc/free cycles | 58.33 ms | 8.24 ms | 7.08x |
+| Batch allocs | 119.30 ms | 31.69 ms | 3.77x |
+| Alloc/free cycles | 53.28 ms | 2.80 ms | 19.02x |
 
 ## Use in your project
 

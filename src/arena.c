@@ -1,3 +1,4 @@
+#define ARENAC_NO_INLINE
 #include "arena.h"
 
 #include <stdint.h>
@@ -98,17 +99,25 @@ static int arena_grow(Arena* a, size_t needed)
     return 1;
 }
 
-void* arena_alloc(Arena* a, size_t size)
+void* arena_alloc_slow(Arena* a, size_t size)
 {
-    if (size > a->size - a->offset)
-    {
-        if (!a->growable) return NULL;
-        if (!arena_grow(a, size)) return NULL;
-    }
+    if (!a->growable) return NULL;
+    if (!arena_grow(a, size)) return NULL;
 
     void* address = a->base + a->offset;
     a->offset += size;
     return address;
+}
+
+void* arena_alloc(Arena* a, size_t size)
+{
+    if (size <= a->size - a->offset)
+    {
+        void* address = a->base + a->offset;
+        a->offset += size;
+        return address;
+    }
+    return arena_alloc_slow(a, size);
 }
 
 void* arena_alloc_array(Arena* a, size_t n, size_t elem_size)
