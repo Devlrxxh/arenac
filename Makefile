@@ -35,10 +35,10 @@ $(BUILD):
 SAN_TESTS := test_arena test_slab
 
 $(BUILD)/test_%_tsan: tests/test_%.c $(SRCS) | $(BUILD)
-	$(CC) $(CFLAGS) -O1 -g -fsanitize=thread $< $(SRCS) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) -O1 -g -fsanitize=thread -DARENAC_THREADS_FORCE_FALLBACK $< $(SRCS) $(LDLIBS) -o $@
 
 $(BUILD)/test_%_asan: tests/test_%.c $(SRCS) | $(BUILD)
-	$(CC) $(CFLAGS) -O1 -g -fsanitize=address $< $(SRCS) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) -O1 -g -fsanitize=address -DARENAC_THREADS_FORCE_FALLBACK $< $(SRCS) $(LDLIBS) -o $@
 
 test: $(LIB) $(TESTS) $(SAN_TESTS:%=$(BUILD)/%_tsan) $(SAN_TESTS:%=$(BUILD)/%_asan)
 	$(BUILD)/test_arena

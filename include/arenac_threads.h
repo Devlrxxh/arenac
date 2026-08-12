@@ -1,7 +1,9 @@
 #ifndef ARENAC_THREADS_H
 #define ARENAC_THREADS_H
 
-#if defined(__has_include)
+#if defined(ARENAC_THREADS_FORCE_FALLBACK)
+#  define ARENAC_THREADS_FALLBACK 1
+#elif defined(__has_include)
 #  if __has_include(<threads.h>)
 #    include <threads.h>
 #  else
