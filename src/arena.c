@@ -1,5 +1,6 @@
 #include "arena.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 Arena* arena_create(size_t initial_size)
@@ -26,12 +27,12 @@ void* arena_alloc_aligned(Arena* a, size_t size, size_t alignment)
 {
     if (alignment == 0) return NULL;
 
-    size_t aligned = (a->offset + alignment - 1) & ~(alignment - 1);
-    if (aligned + size > a->size) return NULL;
+    uintptr_t addr = (uintptr_t)(a->base + a->offset);
+    uintptr_t aligned = (addr + alignment - 1) & ~(alignment - 1);
+    if (aligned + size > (uintptr_t)a->base + a->size) return NULL;
 
-    void* address = a->base + aligned;
-    a->offset = aligned + size;
-    return address;
+    a->offset += (size_t)(aligned - addr) + size;
+    return (void*)aligned;
 }
 
 void arena_reset(Arena* a)
