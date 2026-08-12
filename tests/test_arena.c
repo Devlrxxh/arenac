@@ -247,6 +247,37 @@ static void test_arena_stats(void)
     arena_destroy(a);
 }
 
+static void test_arena_default_alignment(void)
+{
+    Arena* a = arena_create(1024, true);
+    if (!a) FAIL("arena_create (alignment)");
+
+    for (int i = 0; i < 100; i++)
+    {
+        void* p = arena_alloc(a, (size_t)i + 1);
+        if (!p) FAIL("alignment alloc");
+        if ((uintptr_t)p % _Alignof(max_align_t) != 0)
+            FAIL("arena_alloc returned unaligned memory");
+    }
+
+    for (size_t n = 1; n <= 48; n++)
+    {
+        void* p = arena_alloc(a, n);
+        if (!p || (uintptr_t)p % _Alignof(max_align_t) != 0)
+            FAIL("arena_alloc alignment after arbitrary sizes");
+    }
+
+    arena_reset(a);
+    for (int i = 0; i < 50; i++)
+    {
+        void* p = arena_alloc(a, 3);
+        if (!p || (uintptr_t)p % _Alignof(max_align_t) != 0)
+            FAIL("arena_alloc alignment after reset");
+    }
+
+    arena_destroy(a);
+}
+
 static void test_arena_reset_grow(void)
 {
     static const size_t sizes[] = { 1024, 4096, 16384 };
@@ -359,12 +390,13 @@ int main(void)
     if (!c) FAIL("arena_create (c)");
     if (!arena_alloc(c, 40)) FAIL("pre-alloc");
     if (arena_alloc(c, 1 << 20)) FAIL("alloc past size with growth disabled");
-    if (!arena_alloc(c, 24)) FAIL("alloc within size");
+    if (!arena_alloc(c, 16)) FAIL("alloc within size");
     if (arena_alloc_aligned(c, 1 << 20, 4096))
         FAIL("aligned alloc past size with growth disabled");
     arena_destroy(c);
 
     test_arena_stats();
+    test_arena_default_alignment();
     test_arena_reset_grow();
     test_arena_backing();
     test_arena_tls();

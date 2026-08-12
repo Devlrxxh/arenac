@@ -33,11 +33,14 @@ void*  arena_alloc(Arena* a, size_t size);
 #else
 static inline void* arena_alloc(Arena* a, size_t size)
 {
-    if (size <= a->size - a->offset)
+    size_t off = a->offset;
+    size_t rem = off % _Alignof(max_align_t);
+    if (rem) off += _Alignof(max_align_t) - rem;
+
+    if (off >= a->offset && off <= a->size && size <= a->size - off)
     {
-        void* address = a->base + a->offset;
-        a->offset += size;
-        return address;
+        a->offset = off + size;
+        return a->base + off;
     }
     return arena_alloc_slow(a, size);
 }
