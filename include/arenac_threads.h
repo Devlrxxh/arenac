@@ -34,15 +34,23 @@ typedef pthread_mutex_t mtx_t;
 
 static inline int mtx_init(mtx_t* m, int type)
 {
+#if defined(PTHREAD_MUTEX_RECURSIVE)
     if (type == mtx_recursive)
     {
         pthread_mutexattr_t attr;
-        pthread_mutexattr_init(&attr);
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+        if (pthread_mutexattr_init(&attr) != 0) return thrd_error;
+        if (pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) != 0)
+        {
+            pthread_mutexattr_destroy(&attr);
+            return thrd_error;
+        }
         int r = pthread_mutex_init(m, &attr);
         pthread_mutexattr_destroy(&attr);
         return r == 0 ? thrd_success : thrd_error;
     }
+#else
+    (void)type;
+#endif
     return pthread_mutex_init(m, NULL) == 0 ? thrd_success : thrd_error;
 }
 
