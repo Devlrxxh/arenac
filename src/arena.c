@@ -16,7 +16,7 @@ Arena* arena_create(size_t initial_size)
 
 void* arena_alloc(Arena* a, size_t size)
 {
-    if (a->offset + size > a->size) return NULL;
+    if (size > a->size - a->offset) return NULL;
 
     void* address = a->base + a->offset;
     a->offset += size;
