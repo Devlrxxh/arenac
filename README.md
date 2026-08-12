@@ -48,6 +48,13 @@ void* q = arena_shared_alloc(s, 64);
 
 Each thread must use its own instance of each allocator. Do not reset or destroy an instance while another thread is using it.
 
+## Benchmarks
+
+| Test | malloc | arenac | Speedup |
+|------|--------|--------|---------|
+| Batch allocs | 111.91 ms | 31.92 ms | 3.51x |
+| Alloc/free cycles | 49.54 ms | 3.66 ms | 13.54x |
+
 ## Use in your project
 
 Copy include/ and src/ into your project and compile the source files with your application.
