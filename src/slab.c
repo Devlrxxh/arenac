@@ -1,5 +1,6 @@
 #include "slab.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,6 +25,12 @@ Slab* slab_create(size_t object_size, size_t objects_per_block)
     if (object_size < sizeof(void*))
         object_size = sizeof(void*);
     object_size = (object_size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+
+    if (objects_per_block == 0 || object_size > SIZE_MAX / objects_per_block)
+    {
+        free(s);
+        return NULL;
+    }
 
     s->block = malloc(object_size * objects_per_block);
     if (!s->block)
