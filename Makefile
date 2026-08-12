@@ -1,7 +1,8 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -std=c11 -Wall -Wextra -Wpedantic
-CFLAGS  += -Iinclude
-LDLIBS  =
+CFLAGS  += -Iinclude -pthread
+
+LDLIBS  ?= -pthread
 
 BUILD   := build
 LIB     := $(BUILD)/libarenac.a
@@ -31,9 +32,19 @@ $(BUILD)/bench: bench/bench.c $(LIB) | $(BUILD)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-test: all
+SAN_TESTS := test_arena test_slab
+
+$(BUILD)/test_%_tsan: tests/test_%.c $(SRCS) | $(BUILD)
+	$(CC) $(CFLAGS) -O1 -g -fsanitize=thread $< $(SRCS) $(LDLIBS) -o $@
+
+$(BUILD)/test_%_asan: tests/test_%.c $(SRCS) | $(BUILD)
+	$(CC) $(CFLAGS) -O1 -g -fsanitize=address $< $(SRCS) $(LDLIBS) -o $@
+
+test: $(LIB) $(TESTS) $(SAN_TESTS:%=$(BUILD)/%_tsan) $(SAN_TESTS:%=$(BUILD)/%_asan)
 	$(BUILD)/test_arena
 	$(BUILD)/test_slab
+	@for t in $(SAN_TESTS); do $(BUILD)/$${t}_tsan || exit 1; done
+	@for t in $(SAN_TESTS); do $(BUILD)/$${t}_asan || exit 1; done
 
 bench: $(BUILD)/bench
 	$(BUILD)/bench

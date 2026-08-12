@@ -1,6 +1,7 @@
 #ifndef SLAB_H
 #define SLAB_H
 
+#include "arenac_threads.h"
 #include <stddef.h>
 
 typedef struct {
@@ -14,5 +15,20 @@ Slab*  slab_create(size_t object_size, size_t objects_per_block);
 void*  slab_alloc(Slab* s);
 void   slab_free(Slab* s, void* ptr);
 void   slab_destroy(Slab* s);
+
+Slab*  slab_tls_create(size_t object_size, size_t objects_per_block);
+void*  slab_tls_alloc(void);
+void   slab_tls_free(void* ptr);
+void   slab_tls_destroy(void);
+
+typedef struct {
+    mtx_t lock;
+    Slab  slab;
+} SlabShared;
+
+SlabShared* slab_shared_create(size_t object_size, size_t objects_per_block);
+void*       slab_shared_alloc(SlabShared* s);
+void        slab_shared_free(SlabShared* s, void* ptr);
+void        slab_shared_destroy(SlabShared* s);
 
 #endif
