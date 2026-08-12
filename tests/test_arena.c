@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int fails = 0;
 
@@ -48,7 +49,7 @@ static int tls_worker(void* arg)
 {
     (void)arg;
 
-    if (!arena_tls_create(8192))
+    if (!arena_tls_create(8192, true))
         FAIL("arena_tls_create");
 
     void* prev = NULL;
@@ -71,19 +72,24 @@ static int tls_worker(void* arg)
     for (int i = 0; i < 200; i++)
         if (!arena_tls_alloc(32)) FAIL("alloc after reset");
 
-    size_t ok = 0;
-    while (ok <= 100000)
+    size_t grown = 0;
+    while (grown < 5000)
     {
         void* p = arena_tls_alloc(8);
         if (!p) break;
-        ok++;
+        grown++;
     }
-    if (ok != 224) FAIL("exhaustion count");
+    if (grown != 5000) FAIL("grow on demand");
 
+    arena_tls_destroy();
+    if (!arena_tls_create(8192, false))
+        FAIL("arena_tls_create (fixed)");
+    if (arena_tls_alloc(1 << 20)) FAIL("tls fixed capacity");
+    if (!arena_tls_alloc(8192)) FAIL("tls alloc within capacity");
     arena_tls_destroy();
     if (arena_tls_alloc(1)) FAIL("alloc after destroy");
 
-    if (!arena_tls_create(4096))
+    if (!arena_tls_create(4096, true))
         FAIL("arena_tls_create (2nd)");
     if (!arena_tls_alloc(1))
         FAIL("alloc after re-create");
@@ -104,7 +110,7 @@ static void test_arena_tls(void)
     for (int i = 0; i < T; i++)
         thrd_join(th[i], NULL);
 
-    if (!arena_tls_create(4096))
+    if (!arena_tls_create(4096, true))
         FAIL("main create");
     for (int i = 0; i < 100; i++)
         if (!arena_tls_alloc(16)) FAIL("main alloc");
@@ -151,8 +157,17 @@ static void test_arena_shared(void)
     enum { T = 8, PER = 512, PER2 = 150, OVER = 600 };
     const size_t capacity = T * PER * 32;
 
-    ArenaShared* s = arena_shared_create(capacity);
+    ArenaShared* s = arena_shared_create(capacity, false);
     if (!s) FAIL("arena_shared_create");
+
+    size_t cap = 0;
+    while (arena_shared_alloc(s, 32)) cap++;
+    if (cap != capacity / 32) FAIL("shared arena fixed capacity");
+    if (arena_shared_alloc(s, 32)) FAIL("shared arena past-capacity alloc");
+    arena_shared_destroy(s);
+
+    s = arena_shared_create(capacity, true);
+    if (!s) FAIL("arena_shared_create (growth)");
 
     void** out = malloc(T * PER * sizeof *out);
     thrd_t th[T];
@@ -191,7 +206,7 @@ static void test_arena_shared(void)
         args2[i].out = out2;
     }
     run_workers(th, args2, T, shared_worker);
-    if (count_nonnull(out2, T * OVER) != capacity / 32) FAIL("shared arena exhaustion");
+    if (count_nonnull(out2, T * OVER) != T * OVER) FAIL("shared arena growth");
     verify_unique(out2, T * OVER);
 
     arena_shared_destroy(s);
@@ -201,7 +216,7 @@ static void test_arena_shared(void)
 
 int main(void)
 {
-    Arena* a = arena_create(1024);
+    Arena* a = arena_create(1024, true);
 
     printf("Base: %p\n", (void*)a->base);
     printf("Size: %llu\n", (unsigned long long)a->size);
@@ -226,13 +241,49 @@ int main(void)
 
     arena_destroy(a);
 
-    Arena* b = arena_create(64);
+    Arena* b = arena_create(64, true);
     if (!b) FAIL("arena_create (b)");
-    if (arena_alloc(b, 65)) FAIL("oversize alloc not rejected");
+
+    void** ps = malloc(6 * sizeof *ps);
+    if (!ps) FAIL("test malloc");
+    for (int i = 0; i < 6; i++)
+    {
+        ps[i] = arena_alloc(b, 65);
+        if (!ps[i]) FAIL("grow past initial size");
+    }
+    for (int i = 0; i < 6; i++)
+        memset(ps[i], i, 65);
+    for (int i = 0; i < 6; i++)
+    {
+        if (((unsigned char*)ps[i])[64] != (unsigned char)i)
+            FAIL("block content corrupted after growth");
+    }
+    verify_unique(ps, 6);
+    free(ps);
+
+    void* big = arena_alloc_aligned(b, 100, 1024);
+    if (!big || ((uintptr_t)big & 1023)) FAIL("aligned alloc after growth");
+
     if (arena_alloc_aligned(b, 16, 0)) FAIL("zero alignment not rejected");
     if (arena_alloc_aligned(b, 16, 15)) FAIL("non-power-of-two alignment not rejected");
     if (!arena_alloc_aligned(b, 16, 64)) FAIL("valid aligned alloc failed");
+
+    int* arr = arena_alloc_array(b, 10, sizeof(int));
+    if (!arr) FAIL("arena_alloc_array");
+    arr[9] = 42;
+    if (arr[9] != 42) FAIL("arena_alloc_array write");
+    if (arena_alloc_array(b, SIZE_MAX, 2)) FAIL("arena_alloc_array overflow");
+    if (arena_alloc_array(b, SIZE_MAX / 2 + 1, 2)) FAIL("arena_alloc_array partial overflow");
     arena_destroy(b);
+
+    Arena* c = arena_create(64, false);
+    if (!c) FAIL("arena_create (c)");
+    if (!arena_alloc(c, 40)) FAIL("pre-alloc");
+    if (arena_alloc(c, 1 << 20)) FAIL("alloc past size with growth disabled");
+    if (!arena_alloc(c, 24)) FAIL("alloc within size");
+    if (arena_alloc_aligned(c, 1 << 20, 4096))
+        FAIL("aligned alloc past size with growth disabled");
+    arena_destroy(c);
 
     test_arena_tls();
     test_arena_shared();

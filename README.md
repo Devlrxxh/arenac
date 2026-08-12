@@ -27,7 +27,8 @@ void* obj = slab_alloc(s);
 slab_free(s, obj);
 slab_destroy(s);
 ```
-Returns NULL when all slots are in use.
+
+Returns NULL when all slots are in use. `slab_free` aborts on pointers that are not slots of the slab (check with `slab_is_from`).
 
 ## Thread safety
 
@@ -52,8 +53,8 @@ Each thread must use its own instance of each allocator. Do not reset or destroy
 
 | Test | malloc | arenac | Speedup |
 |------|--------|--------|---------|
-| Batch allocs | 111.91 ms | 31.92 ms | 3.51x |
-| Alloc/free cycles | 49.54 ms | 3.66 ms | 13.54x |
+| Batch allocs | 145.12 ms | 42.29 ms | 3.43x |
+| Alloc/free cycles | 58.33 ms | 8.24 ms | 7.08x |
 
 ## Use in your project
 

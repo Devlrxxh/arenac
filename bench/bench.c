@@ -32,7 +32,7 @@ int main(void)
         free(ptrs[i]);
     double malloc_batch = now_sec() - t0;
 
-    Arena* a = arena_create(ITER * 256);
+    Arena* a = arena_create(ITER * 256, true);
     if (!a) return 1;
     t0 = now_sec();
     for (int i = 0; i < ITER; i++)

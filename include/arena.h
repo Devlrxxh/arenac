@@ -2,21 +2,25 @@
 #define ARENA_H
 
 #include "arenac_threads.h"
+#include <stdbool.h>
 #include <stddef.h>
 
-typedef struct {
-    unsigned char* base;   // pointer to start of the memory block
-    size_t         size;   // total capacity of this block
-    size_t         offset; // how much has been handed out so far
+typedef struct Arena {
+    unsigned char* base;     // pointer to start of the memory block
+    size_t         size;     // total capacity of this block
+    size_t         offset;   // how much has been handed out so far
+    bool           growable; // true = grow when full, false = return NULL
+    struct Arena*  prev;     // earlier blocks keeping old allocations valid
 } Arena;
 
-Arena* arena_create(size_t initial_size);
+Arena* arena_create(size_t initial_size, bool growable);
 void*  arena_alloc(Arena* a, size_t size);
+void*  arena_alloc_array(Arena* a, size_t n, size_t elem_size);
 void*  arena_alloc_aligned(Arena* a, size_t size, size_t alignment);
 void   arena_reset(Arena* a);
 void   arena_destroy(Arena* a);
 
-Arena* arena_tls_create(size_t initial_size);
+Arena* arena_tls_create(size_t initial_size, bool growable);
 void*  arena_tls_alloc(size_t size);
 void*  arena_tls_alloc_aligned(size_t size, size_t alignment);
 void   arena_tls_reset(void);
@@ -27,7 +31,7 @@ typedef struct {
     Arena arena;
 } ArenaShared;
 
-ArenaShared* arena_shared_create(size_t initial_size);
+ArenaShared* arena_shared_create(size_t initial_size, bool growable);
 void*        arena_shared_alloc(ArenaShared* s, size_t size);
 void*        arena_shared_alloc_aligned(ArenaShared* s, size_t size, size_t alignment);
 void         arena_shared_reset(ArenaShared* s);

@@ -1,6 +1,7 @@
 #include "slab.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,6 +34,7 @@ static Slab* slab_init(Slab* s, size_t object_size, size_t objects_per_block)
         return NULL;
 
     s->object_size = object_size;
+    s->block_size = object_size * objects_per_block;
     s->free_count = objects_per_block;
 
     unsigned char* slot = s->block;
@@ -72,8 +74,28 @@ void* slab_alloc(Slab* s)
     return slot;
 }
 
+bool slab_is_from(Slab* s, void* ptr)
+{
+    if (!ptr) return false;
+
+    uintptr_t p = (uintptr_t)ptr;
+    uintptr_t base = (uintptr_t)s->block;
+    if (p < base) return false;
+
+    uintptr_t off = p - base;
+    if (off >= s->block_size) return false;
+
+    return off % s->object_size == 0;
+}
+
 void slab_free(Slab* s, void* ptr)
 {
+    if (!slab_is_from(s, ptr))
+    {
+        fprintf(stderr, "slab_free: not a slab slot\n");
+        abort();
+    }
+
     unsigned char* slot = ptr;
     slot_set_next(slot, s->free_head);
     s->free_head = slot;

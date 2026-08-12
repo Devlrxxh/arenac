@@ -1,9 +1,12 @@
 #include "slab.h"
 #include "arenac_threads.h"
 
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static int fails = 0;
 
@@ -42,6 +45,37 @@ static void verify_unique(void* const* arr, size_t n)
         if (v[i] <= v[i - 1]) FAIL("overlapping allocation");
 
     free(v);
+}
+
+static void free_null(void* arg)
+{
+    slab_free(arg, NULL);
+}
+
+static void free_interior(void* arg)
+{
+    Slab* s = arg;
+    slab_free(s, (unsigned char*)s->block + 1);
+}
+
+static void free_foreign(void* arg)
+{
+    Slab* s = arg;
+    void* f = malloc(16);
+    slab_free(s, f);
+}
+
+static int dies_with_abort(void (*fn)(void*), void* arg)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        fn(arg);
+        _exit(0);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
 }
 
 static int tls_worker(void* arg)
@@ -226,6 +260,29 @@ int main(void)
     if (slab_create(64, 0)) FAIL("slab_create zero objects not rejected");
     if (slab_create(SIZE_MAX, 2)) FAIL("slab_create rounded size overflow not rejected");
     if (slab_create(SIZE_MAX, SIZE_MAX)) FAIL("slab_create multiply overflow not rejected");
+
+    Slab* d = slab_create(32, 8);
+    if (!d) FAIL("slab_create (d)");
+    if (slab_is_from(d, NULL)) FAIL("NULL is a slab slot");
+    if (slab_is_from(d, (unsigned char*)d->block + 1)) FAIL("interior pointer is a slab slot");
+    if (slab_is_from(d, (unsigned char*)d->block + d->block_size))
+        FAIL("one-past-end is a slab slot");
+    void* foreign = malloc(16);
+    if (slab_is_from(d, foreign)) FAIL("foreign pointer is a slab slot");
+    free(foreign);
+    if (!slab_is_from(d, d->block)) FAIL("block pointer is not a slab slot");
+    void* slot = slab_alloc(d);
+    if (!slot) FAIL("slab_alloc (d)");
+    if (!slab_is_from(d, slot)) FAIL("valid slot not recognized");
+    slab_free(d, slot);
+    if (!slab_is_from(d, slot)) FAIL("freed slot not recognized");
+    if (!dies_with_abort(free_null, d)) FAIL("free(NULL) did not abort");
+    if (!dies_with_abort(free_interior, d)) FAIL("free(interior) did not abort");
+    if (!dies_with_abort(free_foreign, d)) FAIL("free(foreign) did not abort");
+    slot = slab_alloc(d);
+    if (!slot) FAIL("slab_alloc after abort tests");
+    slab_free(d, slot);
+    slab_destroy(d);
 
     test_slab_tls();
     test_slab_shared();

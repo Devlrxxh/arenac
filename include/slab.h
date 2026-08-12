@@ -2,11 +2,13 @@
 #define SLAB_H
 
 #include "arenac_threads.h"
+#include <stdbool.h>
 #include <stddef.h>
 
 typedef struct {
     unsigned char* block;      // pointer to the memory block
     size_t         object_size; // size of each slot
+    size_t         block_size;  // total bytes of the block
     unsigned char* free_head;   // first free slot (each free slot stores a "next free" pointer inside itself)
     size_t         free_count;  // how many slots are currently free
 } Slab;
@@ -14,6 +16,7 @@ typedef struct {
 Slab*  slab_create(size_t object_size, size_t objects_per_block);
 void*  slab_alloc(Slab* s);
 void   slab_free(Slab* s, void* ptr);
+bool   slab_is_from(Slab* s, void* ptr);
 void   slab_destroy(Slab* s);
 
 Slab*  slab_tls_create(size_t object_size, size_t objects_per_block);
