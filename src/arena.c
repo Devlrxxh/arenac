@@ -29,9 +29,12 @@ void* arena_alloc_aligned(Arena* a, size_t size, size_t alignment)
 
     uintptr_t addr = (uintptr_t)(a->base + a->offset);
     uintptr_t aligned = (addr + alignment - 1) & ~(alignment - 1);
-    if (aligned + size > (uintptr_t)a->base + a->size) return NULL;
+    size_t pad = (size_t)(aligned - addr);
 
-    a->offset += (size_t)(aligned - addr) + size;
+    if (pad > a->size - a->offset) return NULL;
+    if (size > a->size - a->offset - pad) return NULL;
+
+    a->offset += pad + size;
     return (void*)aligned;
 }
 
