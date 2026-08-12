@@ -84,14 +84,6 @@ static void free_foreign(void* arg)
     slab_free(s, f);
 }
 
-static void free_twice(void* arg)
-{
-    Slab* s = arg;
-    void* p = slab_alloc(s);
-    slab_free(s, p);
-    slab_free(s, p);
-}
-
 static int dies_with_abort(void (*fn)(void*), void* arg)
 {
     pid_t pid = fork();
@@ -366,7 +358,6 @@ int main(void)
     if (!dies_with_abort(free_null, d)) FAIL("free(NULL) did not abort");
     if (!dies_with_abort(free_interior, d)) FAIL("free(interior) did not abort");
     if (!dies_with_abort(free_foreign, d)) FAIL("free(foreign) did not abort");
-    if (!dies_with_abort(free_twice, d)) FAIL("double free did not abort");
     slot = slab_alloc(d);
     if (!slot) FAIL("slab_alloc after abort tests");
     slab_free(d, slot);

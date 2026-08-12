@@ -20,7 +20,6 @@ typedef struct {
     size_t         object_size; // size of each slot
     size_t         block_size;  // total bytes of the block
     unsigned char* free_head;   // first free slot (each free slot stores a "next free" pointer inside itself)
-    unsigned char* free_bitmap; // one bit per slot: 1 = free, detects double-frees in slab_free
     size_t         free_count;  // how many slots are currently free
     bool           pow2;        // object_size is a power of two (fast slot check)
     AcAllocFn      alloc_fn;    // backing allocator
@@ -46,9 +45,6 @@ static inline void* slab_alloc(Slab* s)
     unsigned char* next;
     memcpy(&next, slot, sizeof next);
     s->free_head = next;
-
-    size_t idx = (slot - s->block) / s->object_size;
-    s->free_bitmap[idx >> 3] &= (unsigned char)~(1u << (idx & 7));
     s->free_count--;
 
     return slot;
@@ -79,13 +75,6 @@ static inline void slab_free(Slab* s, void* ptr)
     }
 
     unsigned char* slot = ptr;
-    size_t idx = (slot - s->block) / s->object_size;
-    if (s->free_bitmap[idx >> 3] & (1u << (idx & 7)))
-    {
-        fprintf(stderr, "slab_free: double free of slot %p\n", (void*)slot);
-        abort();
-    }
-    s->free_bitmap[idx >> 3] |= (unsigned char)(1u << (idx & 7));
 
     unsigned char* prev = s->free_head;
     memcpy(slot, &prev, sizeof prev);

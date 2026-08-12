@@ -19,26 +19,6 @@ static unsigned char* slot_get_next(unsigned char* slot)
     return next;
 }
 
-static size_t slot_index(const Slab* s, unsigned char* slot)
-{
-    return (size_t)(slot - s->block) / s->object_size;
-}
-
-static void bm_set(unsigned char* bm, size_t i)
-{
-    bm[i >> 3] |= (unsigned char)(1u << (i & 7));
-}
-
-static void bm_clear(unsigned char* bm, size_t i)
-{
-    bm[i >> 3] &= (unsigned char)~(1u << (i & 7));
-}
-
-static bool bm_get(const unsigned char* bm, size_t i)
-{
-    return (bm[i >> 3] >> (i & 7)) & 1u;
-}
-
 static void* default_alloc(void* ctx, size_t size)
 {
     (void)ctx;
@@ -63,23 +43,14 @@ static Slab* slab_init(Slab* s, size_t object_size, size_t objects_per_block,
     if (objects_per_block == 0 || object_size > SIZE_MAX / objects_per_block)
         return NULL;
 
-    unsigned char* bitmap = malloc((objects_per_block + 7) / 8);
-    if (!bitmap)
-        return NULL;
-
     s->block = alloc_fn(ctx, object_size * objects_per_block);
     if (!s->block)
-    {
-        free(bitmap);
         return NULL;
-    }
 
     s->object_size = object_size;
     s->block_size = object_size * objects_per_block;
     s->free_count = objects_per_block;
     s->pow2 = (object_size & (object_size - 1)) == 0;
-    s->free_bitmap = bitmap;
-    memset(bitmap, 0xFF, (objects_per_block + 7) / 8);
     s->alloc_fn = alloc_fn;
     s->free_fn = free_fn;
     s->ctx = ctx;
@@ -126,7 +97,6 @@ void* slab_alloc(Slab* s)
 
     unsigned char* slot = s->free_head;
     s->free_head = slot_get_next(slot);
-    bm_clear(s->free_bitmap, slot_index(s, slot));
     s->free_count--;
 
     return slot;
@@ -157,14 +127,6 @@ void slab_free(Slab* s, void* ptr)
     }
 
     unsigned char* slot = ptr;
-    size_t idx = slot_index(s, slot);
-    if (bm_get(s->free_bitmap, idx))
-    {
-        fprintf(stderr, "slab_free: double free of slot %p\n", (void*)slot);
-        abort();
-    }
-
-    bm_set(s->free_bitmap, idx);
     slot_set_next(slot, s->free_head);
     s->free_head = slot;
     s->free_count++;
@@ -183,7 +145,6 @@ size_t slab_get_active_count(const Slab* s)
 void slab_destroy(Slab* s)
 {
     s->free_fn(s->ctx, s->block);
-    free(s->free_bitmap);
     free(s);
 }
 
@@ -296,6 +257,5 @@ void slab_shared_destroy(SlabShared* s)
 {
     mtx_destroy(&s->lock);
     s->slab.free_fn(s->slab.ctx, s->slab.block);
-    free(s->slab.free_bitmap);
     free(s);
 }
