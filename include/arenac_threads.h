@@ -106,4 +106,43 @@ static inline int thrd_join(thrd_t t, int* res)
 
 #endif
 
+#if defined(ARENAC_THREADS_FALLBACK) || (defined(__has_include) && __has_include(<pthread.h>))
+#  define ARENAC_HAS_TLS_DTOR 1
+#else
+#  define ARENAC_HAS_TLS_DTOR 0
+#endif
+
+#if ARENAC_HAS_TLS_DTOR
+
+#include <pthread.h>
+
+typedef pthread_key_t   arenac_tls_key;
+typedef pthread_once_t  arenac_tls_once;
+
+#define ARENAC_TLS_ONCE_INIT PTHREAD_ONCE_INIT
+
+typedef void (*ArenacTlsDtor)(void*);
+
+static inline void arenac_tls_call_once(arenac_tls_once* once, void (*init)(void))
+{
+    pthread_once(once, init);
+}
+
+static inline int arenac_tls_key_create(arenac_tls_key* key, ArenacTlsDtor dtor)
+{
+    return pthread_key_create(key, dtor);
+}
+
+static inline void* arenac_tls_get(arenac_tls_key key)
+{
+    return pthread_getspecific(key);
+}
+
+static inline void arenac_tls_set(arenac_tls_key key, void* value)
+{
+    pthread_setspecific(key, value);
+}
+
+#endif
+
 #endif

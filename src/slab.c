@@ -19,6 +19,26 @@ static unsigned char* slot_get_next(unsigned char* slot)
     return next;
 }
 
+static size_t slot_index(const Slab* s, unsigned char* slot)
+{
+    return (size_t)(slot - s->block) / s->object_size;
+}
+
+static void bm_set(unsigned char* bm, size_t i)
+{
+    bm[i >> 3] |= (unsigned char)(1u << (i & 7));
+}
+
+static void bm_clear(unsigned char* bm, size_t i)
+{
+    bm[i >> 3] &= (unsigned char)~(1u << (i & 7));
+}
+
+static bool bm_get(const unsigned char* bm, size_t i)
+{
+    return (bm[i >> 3] >> (i & 7)) & 1u;
+}
+
 static void* default_alloc(void* ctx, size_t size)
 {
     (void)ctx;
@@ -43,14 +63,23 @@ static Slab* slab_init(Slab* s, size_t object_size, size_t objects_per_block,
     if (objects_per_block == 0 || object_size > SIZE_MAX / objects_per_block)
         return NULL;
 
+    unsigned char* bitmap = malloc((objects_per_block + 7) / 8);
+    if (!bitmap)
+        return NULL;
+
     s->block = alloc_fn(ctx, object_size * objects_per_block);
     if (!s->block)
+    {
+        free(bitmap);
         return NULL;
+    }
 
     s->object_size = object_size;
     s->block_size = object_size * objects_per_block;
     s->free_count = objects_per_block;
     s->pow2 = (object_size & (object_size - 1)) == 0;
+    s->free_bitmap = bitmap;
+    memset(bitmap, 0xFF, (objects_per_block + 7) / 8);
     s->alloc_fn = alloc_fn;
     s->free_fn = free_fn;
     s->ctx = ctx;
@@ -97,6 +126,7 @@ void* slab_alloc(Slab* s)
 
     unsigned char* slot = s->free_head;
     s->free_head = slot_get_next(slot);
+    bm_clear(s->free_bitmap, slot_index(s, slot));
     s->free_count--;
 
     return slot;
@@ -127,6 +157,14 @@ void slab_free(Slab* s, void* ptr)
     }
 
     unsigned char* slot = ptr;
+    size_t idx = slot_index(s, slot);
+    if (bm_get(s->free_bitmap, idx))
+    {
+        fprintf(stderr, "slab_free: double free of slot %p\n", (void*)slot);
+        abort();
+    }
+
+    bm_set(s->free_bitmap, idx);
     slot_set_next(slot, s->free_head);
     s->free_head = slot;
     s->free_count++;
@@ -145,38 +183,76 @@ size_t slab_get_active_count(const Slab* s)
 void slab_destroy(Slab* s)
 {
     s->free_fn(s->ctx, s->block);
+    free(s->free_bitmap);
     free(s);
 }
 
+#if ARENAC_HAS_TLS_DTOR
+static arenac_tls_key  slab_tls_key;
+static arenac_tls_once slab_tls_once = ARENAC_TLS_ONCE_INIT;
+
+static void slab_tls_dtor(void* p)
+{
+    slab_destroy((Slab*)p);
+}
+
+static void slab_tls_key_init(void)
+{
+    arenac_tls_key_create(&slab_tls_key, slab_tls_dtor);
+}
+
+static Slab* slab_tls_get(void)
+{
+    arenac_tls_call_once(&slab_tls_once, slab_tls_key_init);
+    return (Slab*)arenac_tls_get(slab_tls_key);
+}
+
+static void slab_tls_set(Slab* s)
+{
+    arenac_tls_call_once(&slab_tls_once, slab_tls_key_init);
+    arenac_tls_set(slab_tls_key, s);
+}
+#else
 static _Thread_local Slab* tls_slab;
+
+#define slab_tls_get() (tls_slab)
+#define slab_tls_set(s) (tls_slab = (s))
+#endif
 
 Slab* slab_tls_create(size_t object_size, size_t objects_per_block)
 {
-    if (tls_slab)
+    Slab* prev = slab_tls_get();
+    if (prev)
     {
-        slab_destroy(tls_slab);
+        slab_tls_set(NULL);
+        slab_destroy(prev);
     }
-    tls_slab = slab_create(object_size, objects_per_block);
-    return tls_slab;
+
+    Slab* s = slab_create(object_size, objects_per_block);
+    slab_tls_set(s);
+    return s;
 }
 
 void* slab_tls_alloc(void)
 {
-    if (!tls_slab) return NULL;
-    return slab_alloc(tls_slab);
+    Slab* s = slab_tls_get();
+    if (!s) return NULL;
+    return slab_alloc(s);
 }
 
 void slab_tls_free(void* ptr)
 {
-    if (!tls_slab) return;
-    slab_free(tls_slab, ptr);
+    Slab* s = slab_tls_get();
+    if (!s) return;
+    slab_free(s, ptr);
 }
 
 void slab_tls_destroy(void)
 {
-    if (!tls_slab) return;
-    slab_destroy(tls_slab);
-    tls_slab = NULL;
+    Slab* s = slab_tls_get();
+    if (!s) return;
+    slab_tls_set(NULL);
+    slab_destroy(s);
 }
 
 SlabShared* slab_shared_create(size_t object_size, size_t objects_per_block)
@@ -220,5 +296,6 @@ void slab_shared_destroy(SlabShared* s)
 {
     mtx_destroy(&s->lock);
     s->slab.free_fn(s->slab.ctx, s->slab.block);
+    free(s->slab.free_bitmap);
     free(s);
 }

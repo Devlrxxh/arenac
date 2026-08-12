@@ -84,6 +84,14 @@ static void free_foreign(void* arg)
     slab_free(s, f);
 }
 
+static void free_twice(void* arg)
+{
+    Slab* s = arg;
+    void* p = slab_alloc(s);
+    slab_free(s, p);
+    slab_free(s, p);
+}
+
 static int dies_with_abort(void (*fn)(void*), void* arg)
 {
     pid_t pid = fork();
@@ -131,6 +139,19 @@ static int tls_worker(void* arg)
     return 0;
 }
 
+static int tls_exit_worker(void* arg)
+{
+    (void)arg;
+
+    if (!slab_tls_create(64, 64))
+        FAIL("exit worker create");
+
+    for (int i = 0; i < 64; i++)
+        if (!slab_tls_alloc()) FAIL("exit worker alloc");
+
+    return 0;
+}
+
 static void test_slab_tls(void)
 {
     enum { T = 8 };
@@ -140,6 +161,11 @@ static void test_slab_tls(void)
 
     for (int i = 0; i < T; i++)
         thrd_create(&th[i], tls_worker, NULL);
+    for (int i = 0; i < T; i++)
+        thrd_join(th[i], NULL);
+
+    for (int i = 0; i < T; i++)
+        thrd_create(&th[i], tls_exit_worker, NULL);
     for (int i = 0; i < T; i++)
         thrd_join(th[i], NULL);
 
@@ -340,6 +366,7 @@ int main(void)
     if (!dies_with_abort(free_null, d)) FAIL("free(NULL) did not abort");
     if (!dies_with_abort(free_interior, d)) FAIL("free(interior) did not abort");
     if (!dies_with_abort(free_foreign, d)) FAIL("free(foreign) did not abort");
+    if (!dies_with_abort(free_twice, d)) FAIL("double free did not abort");
     slot = slab_alloc(d);
     if (!slot) FAIL("slab_alloc after abort tests");
     slab_free(d, slot);

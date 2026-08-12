@@ -117,6 +117,19 @@ static int tls_worker(void* arg)
     return 0;
 }
 
+static int tls_exit_worker(void* arg)
+{
+    (void)arg;
+
+    if (!arena_tls_create(4096, true))
+        FAIL("exit worker create");
+
+    for (int i = 0; i < 100; i++)
+        if (!arena_tls_alloc(64)) FAIL("exit worker alloc");
+
+    return 0;
+}
+
 static void test_arena_tls(void)
 {
     enum { T = 8 };
@@ -126,6 +139,11 @@ static void test_arena_tls(void)
 
     for (int i = 0; i < T; i++)
         thrd_create(&th[i], tls_worker, NULL);
+    for (int i = 0; i < T; i++)
+        thrd_join(th[i], NULL);
+
+    for (int i = 0; i < T; i++)
+        thrd_create(&th[i], tls_exit_worker, NULL);
     for (int i = 0; i < T; i++)
         thrd_join(th[i], NULL);
 

@@ -193,41 +193,79 @@ void arena_destroy(Arena* a)
     free(a);
 }
 
+#if ARENAC_HAS_TLS_DTOR
+static arenac_tls_key  arena_tls_key;
+static arenac_tls_once arena_tls_once = ARENAC_TLS_ONCE_INIT;
+
+static void arena_tls_dtor(void* p)
+{
+    arena_destroy((Arena*)p);
+}
+
+static void arena_tls_key_init(void)
+{
+    arenac_tls_key_create(&arena_tls_key, arena_tls_dtor);
+}
+
+static Arena* arena_tls_get(void)
+{
+    arenac_tls_call_once(&arena_tls_once, arena_tls_key_init);
+    return (Arena*)arenac_tls_get(arena_tls_key);
+}
+
+static void arena_tls_set(Arena* a)
+{
+    arenac_tls_call_once(&arena_tls_once, arena_tls_key_init);
+    arenac_tls_set(arena_tls_key, a);
+}
+#else
 static _Thread_local Arena* tls_arena;
+
+#define arena_tls_get() (tls_arena)
+#define arena_tls_set(a) (tls_arena = (a))
+#endif
 
 Arena* arena_tls_create(size_t initial_size, bool growable)
 {
-    if (tls_arena)
+    Arena* prev = arena_tls_get();
+    if (prev)
     {
-        arena_destroy(tls_arena);
+        arena_tls_set(NULL);
+        arena_destroy(prev);
     }
-    tls_arena = arena_create(initial_size, growable);
-    return tls_arena;
+
+    Arena* a = arena_create(initial_size, growable);
+    arena_tls_set(a);
+    return a;
 }
 
 void* arena_tls_alloc(size_t size)
 {
-    if (!tls_arena) return NULL;
-    return arena_alloc(tls_arena, size);
+    Arena* a = arena_tls_get();
+    if (!a) return NULL;
+    return arena_alloc(a, size);
 }
 
 void* arena_tls_alloc_aligned(size_t size, size_t alignment)
 {
-    if (!tls_arena) return NULL;
-    return arena_alloc_aligned(tls_arena, size, alignment);
+    Arena* a = arena_tls_get();
+    if (!a) return NULL;
+    return arena_alloc_aligned(a, size, alignment);
 }
 
 void arena_tls_reset(void)
 {
-    if (!tls_arena) return;
-    arena_reset(tls_arena);
+    Arena* a = arena_tls_get();
+    if (!a) return;
+    arena_reset(a);
 }
 
 void arena_tls_destroy(void)
 {
-    if (!tls_arena) return;
-    arena_destroy(tls_arena);
-    tls_arena = NULL;
+    Arena* a = arena_tls_get();
+    if (!a) return;
+    arena_tls_set(NULL);
+    arena_destroy(a);
 }
 
 ArenaShared* arena_shared_create(size_t initial_size, bool growable)

@@ -49,6 +49,8 @@ void* q = arena_shared_alloc(s, 64);
 
 Each thread must use its own instance of each allocator. Do not reset or destroy an instance while another thread is using it.
 
+Thread local instances are destroyed automatically at thread exit.
+
 ## Monitoring
 
 | API                                   | Returns                                   |

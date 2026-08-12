@@ -7,6 +7,9 @@ LDLIBS  ?= -pthread
 BUILD   := build
 LIB     := $(BUILD)/libarenac.a
 
+PREFIX  ?= /usr/local
+DESTDIR ?=
+
 SRCS    := src/arena.c src/slab.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
@@ -49,7 +52,13 @@ test: $(LIB) $(TESTS) $(SAN_TESTS:%=$(BUILD)/%_tsan) $(SAN_TESTS:%=$(BUILD)/%_as
 bench: $(BUILD)/bench
 	$(BUILD)/bench
 
+install: $(LIB)
+	install -d $(DESTDIR)$(PREFIX)/lib $(DESTDIR)$(PREFIX)/include
+	install -m644 $(LIB) $(DESTDIR)$(PREFIX)/lib/libarenac.a
+	install -m644 include/arena.h $(DESTDIR)$(PREFIX)/include/arena.h
+	install -m644 include/slab.h $(DESTDIR)$(PREFIX)/include/slab.h
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test bench clean
+.PHONY: all test bench install clean
