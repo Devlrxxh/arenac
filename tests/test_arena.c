@@ -21,6 +21,25 @@ static int cmp_uintptr(const void* a, const void* b)
     return (x > y) - (x < y);
 }
 
+typedef struct {
+    size_t allocs;
+    size_t frees;
+} AllocStats;
+
+static void* stats_alloc(void* ctx, size_t size)
+{
+    AllocStats* st = ctx;
+    st->allocs++;
+    return malloc(size);
+}
+
+static void stats_free(void* ctx, void* ptr)
+{
+    AllocStats* st = ctx;
+    st->frees++;
+    free(ptr);
+}
+
 static size_t count_nonnull(void* const* arr, size_t n)
 {
     size_t k = 0;
@@ -214,6 +233,66 @@ static void test_arena_shared(void)
     free(out);
 }
 
+static void test_arena_stats(void)
+{
+    Arena* a = arena_create(256, true);
+    if (!a) FAIL("arena_create (stats)");
+    if (arena_get_used_bytes(a) != 0) FAIL("used bytes initial");
+    if (!arena_alloc(a, 100)) FAIL("stats alloc");
+    if (arena_get_used_bytes(a) != 100) FAIL("used bytes after alloc");
+    if (!arena_alloc_aligned(a, 100, 16)) FAIL("stats aligned alloc");
+    if (arena_get_used_bytes(a) != 212) FAIL("used bytes after aligned alloc");
+    arena_reset(a);
+    if (arena_get_used_bytes(a) != 0) FAIL("used bytes after reset");
+    arena_destroy(a);
+}
+
+static void test_arena_reset_grow(void)
+{
+    static const size_t sizes[] = { 1024, 4096, 16384 };
+    Arena* a = arena_create(64, true);
+    if (!a) FAIL("reset-grow create");
+
+    for (size_t i = 0; i < 3; i++)
+    {
+        if (!arena_alloc(a, sizes[i])) FAIL("reset-grow alloc");
+        if (a->prev == NULL) FAIL("expected grown chain");
+        arena_reset(a);
+        if (a->prev != NULL) FAIL("prev chain not freed on reset");
+        if (a->base == NULL) FAIL("base lost on reset");
+        if (arena_get_used_bytes(a) != 0) FAIL("used bytes not zeroed on reset");
+    }
+
+    if (!arena_alloc(a, 1 << 10)) FAIL("reset-grow alloc after resets");
+    if (arena_get_used_bytes(a) != 1 << 10) FAIL("used bytes after reset growth");
+    arena_destroy(a);
+}
+
+static void test_arena_backing(void)
+{
+    AllocStats st = { 0, 0 };
+
+    Arena* a = arena_create_with_allocator(64, true, stats_alloc, stats_free, &st);
+    if (!a) FAIL("arena_create_with_allocator");
+    if (st.allocs != 1) FAIL("backing alloc count after create");
+    if (st.frees != 0) FAIL("backing frees before reset");
+
+    if (!arena_alloc(a, 1 << 10)) FAIL("backing grow alloc");
+    if (st.allocs != 3) FAIL("backing alloc count after grow");
+    if (!arena_alloc(a, 1 << 12)) FAIL("backing grow alloc 2");
+    if (st.allocs != 5) FAIL("backing alloc count after grows");
+
+    arena_reset(a);
+    if (st.frees != 4) FAIL("backing frees after reset");
+    arena_destroy(a);
+    if (st.frees != 5) FAIL("backing frees after destroy");
+
+    if (arena_create_with_allocator(64, true, NULL, NULL, NULL))
+        FAIL("null backing allocator not rejected");
+    if (arena_create_with_allocator(64, true, stats_alloc, NULL, &st))
+        FAIL("null backing free not rejected");
+}
+
 int main(void)
 {
     Arena* a = arena_create(1024, true);
@@ -285,6 +364,9 @@ int main(void)
         FAIL("aligned alloc past size with growth disabled");
     arena_destroy(c);
 
+    test_arena_stats();
+    test_arena_reset_grow();
+    test_arena_backing();
     test_arena_tls();
     test_arena_shared();
 

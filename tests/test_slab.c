@@ -23,6 +23,25 @@ static int cmp_uintptr(const void* a, const void* b)
     return (x > y) - (x < y);
 }
 
+typedef struct {
+    size_t allocs;
+    size_t frees;
+} AllocStats;
+
+static void* stats_alloc(void* ctx, size_t size)
+{
+    AllocStats* st = ctx;
+    st->allocs++;
+    return malloc(size);
+}
+
+static void stats_free(void* ctx, void* ptr)
+{
+    AllocStats* st = ctx;
+    st->frees++;
+    free(ptr);
+}
+
 static size_t count_nonnull(void* const* arr, size_t n)
 {
     size_t k = 0;
@@ -228,6 +247,48 @@ static void test_slab_shared(void)
     free(out);
 }
 
+static void test_slab_stats(void)
+{
+    Slab* s = slab_create(32, 8);
+    if (!s) FAIL("slab_create (stats)");
+    if (slab_get_free_count(s) != 8) FAIL("free count init");
+    if (slab_get_active_count(s) != 0) FAIL("active count init");
+
+    void* p1 = slab_alloc(s);
+    void* p2 = slab_alloc(s);
+    if (!p1 || !p2) FAIL("stats alloc");
+    if (slab_get_free_count(s) != 6) FAIL("free count after 2 allocs");
+    if (slab_get_active_count(s) != 2) FAIL("active count after 2 allocs");
+
+    slab_free(s, p1);
+    if (slab_get_free_count(s) != 7) FAIL("free count after free");
+    if (slab_get_active_count(s) != 1) FAIL("active count after free");
+
+    slab_free(s, p2);
+    if (slab_get_free_count(s) != 8) FAIL("free count after all freed");
+    if (slab_get_active_count(s) != 0) FAIL("active count after all freed");
+    slab_destroy(s);
+}
+
+static void test_slab_backing(void)
+{
+    AllocStats st = { 0, 0 };
+
+    Slab* s = slab_create_with_allocator(32, 4, stats_alloc, stats_free, &st);
+    if (!s) FAIL("slab_create_with_allocator");
+    if (st.allocs != 1) FAIL("backing alloc count after create");
+    if (st.frees != 0) FAIL("backing frees before destroy");
+
+    void* p = slab_alloc(s);
+    if (!p) FAIL("backing alloc");
+    slab_free(s, p);
+    slab_destroy(s);
+    if (st.frees != 1) FAIL("backing frees after destroy");
+
+    if (slab_create_with_allocator(32, 4, NULL, NULL, NULL))
+        FAIL("null backing allocator not rejected");
+}
+
 int main(void)
 {
     Slab* s = slab_create(32, 4);
@@ -284,6 +345,8 @@ int main(void)
     slab_free(d, slot);
     slab_destroy(d);
 
+    test_slab_stats();
+    test_slab_backing();
     test_slab_tls();
     test_slab_shared();
 

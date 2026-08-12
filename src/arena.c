@@ -3,28 +3,54 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-static Arena* arena_init(Arena* a, size_t initial_size, bool growable)
+static void* default_alloc(void* ctx, size_t size)
+{
+    (void)ctx;
+    return malloc(size);
+}
+
+static void default_free(void* ctx, void* ptr)
+{
+    (void)ctx;
+    free(ptr);
+}
+
+static Arena* arena_init(Arena* a, size_t initial_size, bool growable,
+                         AcAllocFn alloc_fn, AcFreeFn free_fn, void* ctx)
 {
     if (initial_size == 0)
         initial_size = 1;
 
-    a->base = malloc(initial_size);
+    a->base = alloc_fn(ctx, initial_size);
     if (!a->base) return NULL;
 
     a->size = initial_size;
     a->offset = 0;
     a->growable = growable;
     a->prev = NULL;
+    a->alloc_fn = alloc_fn;
+    a->free_fn = free_fn;
+    a->ctx = ctx;
 
     return a;
 }
 
 Arena* arena_create(size_t initial_size, bool growable)
 {
+    return arena_create_with_allocator(initial_size, growable,
+                                       default_alloc, default_free, NULL);
+}
+
+Arena* arena_create_with_allocator(size_t initial_size, bool growable,
+                                   AcAllocFn alloc_fn, AcFreeFn free_fn,
+                                   void* ctx)
+{
+    if (!alloc_fn || !free_fn) return NULL;
+
     Arena* a = malloc(sizeof(Arena));
     if (!a) return NULL;
 
-    if (!arena_init(a, initial_size, growable))
+    if (!arena_init(a, initial_size, growable, alloc_fn, free_fn, ctx))
     {
         free(a);
         return NULL;
@@ -46,20 +72,23 @@ static int arena_grow(Arena* a, size_t needed)
     if (new_size < needed)
         new_size = needed;
 
-    Arena* old = malloc(sizeof(Arena));
+    Arena* old = a->alloc_fn(a->ctx, sizeof(Arena));
     if (!old) return 0;
 
     old->base = a->base;
     old->size = a->size;
     old->offset = a->offset;
     old->prev = a->prev;
+    old->alloc_fn = a->alloc_fn;
+    old->free_fn = a->free_fn;
+    old->ctx = a->ctx;
     a->prev = old;
 
-    unsigned char* new_base = malloc(new_size);
+    unsigned char* new_base = a->alloc_fn(a->ctx, new_size);
     if (!new_base)
     {
         a->prev = old->prev;
-        free(old);
+        a->free_fn(a->ctx, old);
         return 0;
     }
 
@@ -113,22 +142,37 @@ void* arena_alloc_aligned(Arena* a, size_t size, size_t alignment)
     }
 }
 
-void arena_reset(Arena* a)
+size_t arena_get_used_bytes(const Arena* a)
 {
-    a->offset = 0;
+    size_t used = a->offset;
+    for (const Arena* b = a->prev; b; b = b->prev)
+        used += b->offset;
+    return used;
 }
 
-static void arena_destroy_blocks(Arena* a)
+static void arena_free_prev_blocks(Arena* a)
 {
     Arena* b = a->prev;
     while (b)
     {
         Arena* next = b->prev;
-        free(b->base);
-        free(b);
+        b->free_fn(b->ctx, b->base);
+        b->free_fn(b->ctx, b);
         b = next;
     }
-    free(a->base);
+    a->prev = NULL;
+}
+
+void arena_reset(Arena* a)
+{
+    arena_free_prev_blocks(a);
+    a->offset = 0;
+}
+
+static void arena_destroy_blocks(Arena* a)
+{
+    arena_free_prev_blocks(a);
+    a->free_fn(a->ctx, a->base);
 }
 
 void arena_destroy(Arena* a)
@@ -185,7 +229,8 @@ ArenaShared* arena_shared_create(size_t initial_size, bool growable)
         return NULL;
     }
 
-    if (!arena_init(&s->arena, initial_size, growable))
+    if (!arena_init(&s->arena, initial_size, growable,
+                    default_alloc, default_free, NULL))
     {
         mtx_destroy(&s->lock);
         free(s);

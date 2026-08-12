@@ -5,18 +5,31 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifndef ARENAC_ALLOCATOR_TYPES
+#define ARENAC_ALLOCATOR_TYPES
+typedef void* (*AcAllocFn)(void* ctx, size_t size);
+typedef void  (*AcFreeFn)(void* ctx, void* ptr);
+#endif
+
 typedef struct Arena {
     unsigned char* base;     // pointer to start of the memory block
     size_t         size;     // total capacity of this block
     size_t         offset;   // how much has been handed out so far
     bool           growable; // true = grow when full, false = return NULL
     struct Arena*  prev;     // earlier blocks keeping old allocations valid
+    AcAllocFn      alloc_fn; // backing allocator
+    AcFreeFn       free_fn;  // backing deallocator
+    void*          ctx;      // opaque context passed to the backing allocator
 } Arena;
 
 Arena* arena_create(size_t initial_size, bool growable);
+Arena* arena_create_with_allocator(size_t initial_size, bool growable,
+                                   AcAllocFn alloc_fn, AcFreeFn free_fn,
+                                   void* ctx);
 void*  arena_alloc(Arena* a, size_t size);
 void*  arena_alloc_array(Arena* a, size_t n, size_t elem_size);
 void*  arena_alloc_aligned(Arena* a, size_t size, size_t alignment);
+size_t arena_get_used_bytes(const Arena* a);
 void   arena_reset(Arena* a);
 void   arena_destroy(Arena* a);
 

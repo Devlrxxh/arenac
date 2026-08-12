@@ -40,14 +40,33 @@ Returns NULL when all slots are in use. `slab_free` aborts on pointers that are 
 | `arena_shared_*` / `slab_shared_*` | one instance shared between threads, mutex  |
 
 ```c
-Arena* tla = arena_tls_create(1 << 20);        // per thread
-ArenaShared* s = arena_shared_create(1 << 20); // shared
+Arena* tla = arena_tls_create(1 << 20, true);        // per thread
+ArenaShared* s = arena_shared_create(1 << 20, true); // shared
 
 void* p = arena_tls_alloc(64);
 void* q = arena_shared_alloc(s, 64);
 ```
 
 Each thread must use its own instance of each allocator. Do not reset or destroy an instance while another thread is using it.
+
+## Monitoring
+
+| API                                   | Returns                                   |
+|---------------------------------------|-------------------------------------------|
+| `arena_get_used_bytes(a)`             | bytes currently handed out across all blocks |
+| `slab_get_free_count(s)`              | free slots remaining                      |
+| `slab_get_active_count(s)`            | slots currently in use                    |
+
+## Custom allocators
+
+`arena_create_with_allocator` and `slab_create_with_allocator` use your own `AcAllocFn`/`AcFreeFn` for the backing memory (e.g. `mmap`).
+
+```c
+void* map(void* ctx, size_t size); // your allocator
+void  unmap(void* ctx, void* ptr); // your deallocator
+
+Arena* a = arena_create_with_allocator(1 << 20, true, map, unmap, NULL);
+```
 
 ## Benchmarks
 
