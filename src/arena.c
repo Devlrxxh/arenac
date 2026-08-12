@@ -6,11 +6,21 @@
 Arena* arena_create(size_t initial_size)
 {
     Arena* a = malloc(sizeof(Arena));
+    if (!a) return NULL;
+
+    if (initial_size == 0)
+        initial_size = 1;
+
     a->base = malloc(initial_size);
+    if (!a->base)
+    {
+        free(a);
+        return NULL;
+    }
 
     a->size = initial_size;
     a->offset = 0;
-  
+   
     return a;
 }
 
