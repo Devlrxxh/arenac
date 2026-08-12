@@ -7,7 +7,7 @@ Fast, Thread safe arena and slab allocators for C.
 ```c
 #include "arena.h"
 
-Arena* a = arena_create(1024);
+Arena* a = arena_create(1024, true); // true = doubles the size of the allocation once full
 
 int*    nums = arena_alloc(a, sizeof(int) * 10);
 double* vec  = arena_alloc_aligned(a, sizeof(double) * 4, 16);
